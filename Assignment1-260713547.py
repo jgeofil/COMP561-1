@@ -4,9 +4,12 @@ import sys, getopt
 import numpy as np
 
 def main(argv):
-    helpMsg = 'test.py -i <inputfile> -a <multipleOfThreeScore> -b <nonMultipleOfThreeScore> -m <scoreForMatches> -t <transitionScore> -v <transversionScore>'
+    helpMsg = 'test.py -i <inputfile> -a <multipleOfThreeScore> -b <nonMultipleOfThreeScore> -m <scoreForMatches> -t <transitionScore> -v <transversionScore> -o <gapOpen>'
+
+    GAP_OPEN = 0
+
     try:
-        opts, args = getopt.getopt(argv,"hi:a:b:m:t:v:")
+        opts, args = getopt.getopt(argv,"hi:a:b:m:t:v:o:")
     except getopt.GetoptError:
         print(helpMsg)
         sys.exit(2)
@@ -26,6 +29,8 @@ def main(argv):
             TRANSITION_SCORE = int(arg)
         elif opt == "-v":
             TRANSVERSION_SCORE = int(arg)
+        elif opt == "-o":
+            GAP_OPEN = int(arg)
 
     with open(inputfile) as f:
         count = 0
@@ -61,7 +66,6 @@ def main(argv):
     for i in range(0,M1):
         D[i,0] = i * GAP_PEN_B
         HA1[i,0], HA2[i,0], HA3[i,0] = float("-inf"), float("-inf"), float("-inf")
-        VA1[i,0], VA2[i,0], VA3[i,0] = float("-inf"), float("-inf"), float("-inf")
         VA3[i,0] = GAP_PEN_A*i if i%3 == 0 else float("-inf")
         VA1[i,0] = GAP_PEN_A*i if i%1 == 0 else float("-inf")
         VA2[i,0] = GAP_PEN_A*i if i%2 == 0 else float("-inf")
@@ -69,9 +73,8 @@ def main(argv):
     for j in range(0,N1):
         D[0,j] = j * GAP_PEN_B
         VA1[0,j], VA2[0,j], VA3[0,j] = float("-inf"), float("-inf"), float("-inf")
-        HA1[0,j], HA2[0,j], HA3[0,j] = float("-inf"), float("-inf"), float("-inf")
         HA3[0,j] = GAP_PEN_A*j if j%3 == 0 else float("-inf")
-        HA1[0,j] = GAP_PEN_A*j if j%1 == 0 else float("-inf")
+        HA1[0,j] = GAP_PEN_A*i if j%1 == 0 else float("-inf")
         HA2[0,j] = GAP_PEN_A*j if j%2 == 0 else float("-inf")
 
     print('Recursion...')
@@ -89,33 +92,21 @@ def main(argv):
             Vtop = VA3[i-1,j-1] + match
             Hleft = HA3[i-1,j-1] + match
 
-            D[i,j] = max(DtopB, DleftB, Vtop, Hleft, Ddiag)
+            D[i,j] = max(Ddiag, DtopB, DleftB, Vtop, Hleft)
 
-            DtopA = di1j + GAP_PEN_A
+            DtopA = di1j + GAP_PEN_A + GAP_OPEN
             VA3topA = VA3[i-1, j] + GAP_PEN_A
 
             VA1[i,j] = max(DtopA, VA3topA)
             VA2[i,j] = VA1[i-1,j] + GAP_PEN_A
             VA3[i,j] = VA2[i-1,j] + GAP_PEN_A
 
-            DleftA = dij1 + GAP_PEN_A
+            DleftA = dij1 + GAP_PEN_A + GAP_OPEN
             HA3leftA = HA3[i, j-1] + GAP_PEN_A
 
             HA1[i,j] = max(DleftA, HA3leftA)
             HA2[i,j] = HA1[i, j-1] + GAP_PEN_A
             HA3[i,j] = HA2[i, j-1] + GAP_PEN_A
-    #HA1[HA1>1000] = 100
-
-    for row in HA1[7:11, 68:72]:
-        row[row<-10000] =10
-    for row in HA2[7:11, 68:72]:
-        row[row<-10000] =10
-    for row in HA3[7:11, 68:72]:
-        row[row<-10000] =10
-    print(D.astype('int')[7:11, 68:72])
-    print(HA1.astype('int')[7:11, 68:72])
-    print(HA2.astype('int')[7:11, 68:72])
-    print(HA3.astype('int')[7:11, 68:72])
 
     # Traceback
     print('Tracing back...')
@@ -126,12 +117,8 @@ def main(argv):
     print(score)
 
     while i > 0 or j > 0:
-        print(state)
-        print(i)
-        print(j)
 
         if state == 'D':
-
 
             match = SCORING_M[SEQ1[i-1]][SEQ2[j-1]]
 
@@ -141,16 +128,14 @@ def main(argv):
             scoreH3 = HA3[i-1, j-1] + match
             scoreV3 = VA3[i-1, j-1] + match
 
-            print(scoreDiag)
-            print(scoreTop)
-            print(scoreLeft)
-            print(scoreH3)
-            print(scoreV3)
-            print(score)
-
-
-
-            if score == scoreTop:
+            if score == scoreDiag:
+                ali1 += SEQ1[i-1]
+                ali2 += SEQ2[j-1]
+                state = 'D'
+                i -= 1
+                j -= 1
+                score = D[i,j]
+            elif score == scoreTop:
                 ali1 += SEQ1[i-1]
                 ali2 += '-'
                 state = 'D'
@@ -179,13 +164,6 @@ def main(argv):
                 i -= 1
                 j -= 1
                 score = VA3[i,j]
-            elif score == scoreDiag:
-                ali1 += SEQ1[i-1]
-                ali2 += SEQ2[j-1]
-                state = 'D'
-                i -= 1
-                j -= 1
-                score = D[i,j]
 
         elif state == 'H1':
             if i == 0:
@@ -204,7 +182,7 @@ def main(argv):
                     state = 'H3'
                     j -= 1
                     score = HA3[i,j]
-                elif score == scoreLeft + GAP_PEN_A:
+                elif score == scoreLeft + GAP_PEN_A  + GAP_OPEN:
                     ali1 += '-'
                     ali2 += SEQ2[j-1]
                     state = 'D'
@@ -239,7 +217,7 @@ def main(argv):
                     state = 'V3'
                     i -= 1
                     score = VA3[i,j]
-                elif score == scoreTop + GAP_PEN_A:
+                elif score == scoreTop + GAP_PEN_A  + GAP_OPEN:
                     ali1 += SEQ1[i-1]
                     ali2 += '-'
                     state = 'D'
